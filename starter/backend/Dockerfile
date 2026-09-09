@@ -23,4 +23,4 @@ RUN cd /app && pipenv install --system --deploy
 
 COPY . /app
 
-CMD uwsgi --http :5000 --master --enable-threads -s /var/www/
+CMD ["uwsgi", "--http-socket", ":5000", "--master", "--enable-threads", "--manage-script-name", "--mount", "/=app:app"]
