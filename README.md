@@ -1,3 +1,19 @@
+## Submission
+
+Workflows in `.github/workflows/`:
+- `frontend-ci.yaml` — Frontend Continuous Integration (pull_request + manual)
+- `backend-ci.yaml` — Backend Continuous Integration (pull_request + manual)
+- `frontend-cd.yaml` — Frontend Continuous Deployment (push to main + manual)
+- `backend-cd.yaml` — Backend Continuous Deployment (push to main + manual)
+
+AWS credentials are stored only in GitHub Secrets. Images are pushed to ECR tagged with the git SHA and deployed to EKS with kustomize/kubectl.
+
+Live URLs at time of submission (infrastructure torn down afterwards to save cost — see screenshots for evidence):
+- Frontend: http://a322c9b5bdecc432e8db29b6702d7f65-91418670.us-east-1.elb.amazonaws.com
+- Backend: http://a53e28a6ea9d8456fb4220e7ddd46a4c-275508200.us-east-1.elb.amazonaws.com/movies
+
+Screenshots are in the root of the repository (`*.png`).
+
 # Movie Picture Pipeline
 
 You've been brought on as the DevOps resource for a development team that manages a web application that is a catalog of Movie Picture movies. They're in dire need of automating their development workflows in hopes of accelerating their release cycle. They'd like to use Github Actions to automate testing, building and deploying their applications to an existing Kubernetes cluster.
