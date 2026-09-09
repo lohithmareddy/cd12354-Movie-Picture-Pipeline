@@ -1,20 +1,21 @@
-name: Backend Continuous Deployment
+name: Frontend Continuous Deployment
 
 on:
   push:
     branches: [main]
     paths:
-      - "starter/backend/**"
+      - "starter/frontend/**"
   workflow_dispatch:
 
 env:
+  CI: "true"
   AWS_REGION: us-east-1
   EKS_CLUSTER_NAME: cluster
-  ECR_REPOSITORY: backend
+  ECR_REPOSITORY: frontend
 
 defaults:
   run:
-    working-directory: starter/backend
+    working-directory: starter/frontend
 
 jobs:
   lint:
@@ -24,25 +25,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup NodeJS
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.10"
+          node-version-file: starter/frontend/.nvmrc
 
-      - name: Restore pipenv cache
+      - name: Restore npm cache
         uses: actions/cache@v4
         with:
-          path: ~/.local/share/virtualenvs
-          key: ${{ runner.os }}-pipenv-${{ hashFiles('starter/backend/Pipfile.lock') }}
-          restore-keys: ${{ runner.os }}-pipenv-
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('starter/frontend/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
 
       - name: Install dependencies
-        run: |
-          pip install pipenv
-          pipenv install --dev
+        run: npm ci
 
       - name: Run lint
-        run: pipenv run lint
+        run: npm run lint
 
   test:
     name: Test
@@ -51,25 +50,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup NodeJS
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.10"
+          node-version-file: starter/frontend/.nvmrc
 
-      - name: Restore pipenv cache
+      - name: Restore npm cache
         uses: actions/cache@v4
         with:
-          path: ~/.local/share/virtualenvs
-          key: ${{ runner.os }}-pipenv-${{ hashFiles('starter/backend/Pipfile.lock') }}
-          restore-keys: ${{ runner.os }}-pipenv-
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('starter/frontend/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
 
       - name: Install dependencies
-        run: |
-          pip install pipenv
-          pipenv install --dev
+        run: npm ci
 
       - name: Run tests
-        run: pipenv run test
+        run: npm test
 
   build-and-deploy:
     name: Build, Push & Deploy
@@ -90,11 +87,21 @@ jobs:
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name $EKS_CLUSTER_NAME --region $AWS_REGION
+
+      - name: Get backend URL
+        id: backend
+        run: |
+          HOST=$(kubectl get svc backend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          echo "url=http://$HOST" >> "$GITHUB_OUTPUT"
+
       - name: Build Docker image
         env:
           REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
-        run: docker build --tag $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          REACT_APP_MOVIE_API_URL: ${{ steps.backend.outputs.url }}
+        run: docker build --build-arg=REACT_APP_MOVIE_API_URL=$REACT_APP_MOVIE_API_URL --tag $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
 
       - name: Push Docker image to ECR
         env:
@@ -102,18 +109,13 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: docker push $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-      - name: Update kubeconfig
-        run: aws eks update-kubeconfig --name $EKS_CLUSTER_NAME --region $AWS_REGION
-
       - name: Deploy to Kubernetes
         env:
           REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
-        working-directory: starter/backend/k8s
+        working-directory: starter/frontend/k8s
         run: |
-          kustomize edit set image backend=$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          kustomize edit set image frontend=$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           kustomize build | kubectl apply -f -
-          kubectl rollout status deployment/backend --timeout=180s
-          echo "Backend URL: http://$(kubectl get svc backend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')/movies"
-
-         
+          kubectl rollout status deployment/frontend --timeout=180s
+          echo "Frontend URL: http://$(kubectl get svc frontend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
